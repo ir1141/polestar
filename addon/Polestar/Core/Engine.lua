@@ -4105,6 +4105,36 @@ function Own.sectionPlan()
 	return plan
 end
 
+-- Per guide, rebuilt each evaluation: the skill each step starts at for the
+-- character (stepStart[s]); none for a step another character takes. A
+-- section's walk begins at its `from`; a craft `until N` or `skill <Profession>
+-- N` of the section's line raises it to N for the steps after.
+Own.targetPlans = setmetatable({}, { __mode = "k" })
+function Own.targetPlan()
+	local plan = Own.targetPlans[guide]
+	if plan and plan.gen == generation then return plan end
+	if not player then refreshPlayer() end
+	plan = { gen = generation, stepStart = {} }
+	local cur = {}
+	for s, step in ipairs(guide.steps) do
+		local n = step.section
+		local sec = n and guide.sections and guide.sections[n]
+		if sec and Guides.Matches(step.only, player) then
+			local line = sec.skillLine or sec.skill
+			cur[n] = cur[n] or sec.from
+			plan.stepStart[s] = cur[n]
+			for _, goal in ipairs(step.goals) do
+				local raise = goal.t == "craft" and goal.untilSkill or goal.t == "skill" and goal.level
+				if raise and (goal.skillLine or goal.skill) == line and Guides.Matches(goal.only, player) then
+					cur[n] = math.max(cur[n], raise)
+				end
+			end
+		end
+	end
+	Own.targetPlans[guide] = plan
+	return plan
+end
+
 -- Expected crafts of a `craft … until` goal from skill k, the goal taking
 -- over at `start` (Classic chance: 1 below yellow, then (grey - k) / (grey -
 -- yellow)); 0 without its colours.
@@ -4382,8 +4412,9 @@ end
 
 -- The section heading over step i for the window: { title ("First Aid
 -- 1-40"), skill, skillLine, from, to, rank, state }; state "done" (the skill
--- has passed it), "current" (the first section it has not) or "ahead"; nil
--- for a step under no section.
+-- has passed it), "current" (the first section it has not) or "ahead"; start,
+-- the skill step i starts at for the character (nil for a step of another
+-- character); nil for a step under no section.
 function Engine.GetSection(i)
 	local sec, n = Own.sectionOf(i)
 	if not sec then return nil end
@@ -4402,6 +4433,7 @@ function Engine.GetSection(i)
 	return {
 		index = n, title = ("%s %d-%d"):format(name, sec.from, sec.to), skill = sec.skill, skillLine = sec.skillLine,
 		from = sec.from, to = sec.to, rank = rank, state = state,
+		start = Own.targetPlan().stepStart[i],
 	}
 end
 
